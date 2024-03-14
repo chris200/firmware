@@ -130,6 +130,9 @@ bool NodeDB::factoryReset()
     LOG_INFO("Performing factory reset!\n");
     // first, remove the "/prefs" (this removes most prefs)
     rmDir("/prefs");
+    if (FSCom.exists("/static/rangetest.csv") && !FSCom.remove("/static/rangetest.csv")) {
+        LOG_WARN("Could not remove rangetest.csv file\n");
+    }
     // second, install default state (this will deal with the duplicate mac address issue)
     installDefaultDeviceState();
     installDefaultConfig();
@@ -741,14 +744,17 @@ uint32_t sinceReceived(const meshtastic_MeshPacket *p)
 
 #define NUM_ONLINE_SECS (60 * 60 * 2) // 2 hrs to consider someone offline
 
-size_t NodeDB::getNumOnlineMeshNodes()
+size_t NodeDB::getNumOnlineMeshNodes(bool localOnly)
 {
     size_t numseen = 0;
 
     // FIXME this implementation is kinda expensive
-    for (int i = 0; i < *numMeshNodes; i++)
+    for (int i = 0; i < *numMeshNodes; i++) {
+        if (localOnly && meshNodes[i].via_mqtt)
+            continue;
         if (sinceLastSeen(&meshNodes[i]) < NUM_ONLINE_SECS)
             numseen++;
+    }
 
     return numseen;
 }
@@ -872,6 +878,12 @@ void NodeDB::updateFrom(const meshtastic_MeshPacket &mp)
 
         if (mp.rx_snr)
             info->snr = mp.rx_snr; // keep the most recent SNR we received for this node.
+
+        info->via_mqtt = mp.via_mqtt; // Store if we received this packet via MQTT
+
+        // If hopStart was set and there wasn't someone messing with the limit in the middle, add hopsAway
+        if (mp.hop_start != 0 && mp.hop_limit <= mp.hop_start)
+            info->hops_away = mp.hop_start - mp.hop_limit;
     }
 }
 
@@ -903,8 +915,8 @@ meshtastic_NodeInfoLite *NodeDB::getOrCreateMeshNode(NodeNum n)
     if (!lite) {
         if ((*numMeshNodes >= MAX_NUM_NODES) || (memGet.getFreeHeap() < meshtastic_NodeInfoLite_size * 3)) {
             if (screen)
-                screen->print("warning: node_db_lite full! erasing oldest entry\n");
-            LOG_INFO("warning: node_db_lite full! erasing oldest entry\n");
+                screen->print("Warn: node database full!\nErasing oldest entry\n");
+            LOG_INFO("Warn: node database full!\nErasing oldest entry\n");
             // look for oldest node and erase it
             uint32_t oldest = UINT32_MAX;
             int oldestIndex = -1;

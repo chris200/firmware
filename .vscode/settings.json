@@ -2,7 +2,12 @@
   "editor.formatOnSave": true,
   "editor.defaultFormatter": "trunk.io",
   "trunk.enableWindows": true,
+<<<<<<< HEAD
   "[json]": {
     "editor.defaultFormatter": "vscode.json-language-features"
   }
+=======
+  "files.insertFinalNewline": false,
+  "files.trimFinalNewlines": false
+>>>>>>> 9c37e57e750a72324ea58f6acda53168c4efae50
 }
