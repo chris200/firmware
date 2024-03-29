@@ -5,9 +5,13 @@
         "platformio.platformio-ide"
     ],
 <<<<<<< HEAD
+<<<<<<< HEAD
     "unwantedRecommendations": [
         "ms-vscode.cpptools-extension-pack"
     ]
 =======
 >>>>>>> 9c37e57e750a72324ea58f6acda53168c4efae50
 }
+=======
+}
+>>>>>>> 279464f96d5139920b017d437501233737daf407

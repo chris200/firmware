@@ -2,6 +2,7 @@
 #include "MeshService.h"
 #include "NodeDB.h"
 #include "PowerFSM.h"
+#include "configuration.h"
 #include "main.h"
 #include "mesh/Channels.h"
 #include "mesh/Router.h"
@@ -13,10 +14,11 @@
 #endif
 #include "mesh/generated/meshtastic/remote_hardware.pb.h"
 #include "sleep.h"
-#if HAS_WIFI
+#if HAS_WIFI && !MESHTASTIC_EXCLUDE_WIFI
 #include "mesh/wifi/WiFiAPClient.h"
 #include <WiFi.h>
 #endif
+#include "Default.h"
 #include <assert.h>
 
 const int reconnectMax = 5;
@@ -166,7 +168,7 @@ void MQTT::onReceive(char *topic, byte *payload, size_t length)
                 // Generate an implicit ACK towards ourselves (handled and processed only locally!) for this message.
                 // We do this because packets are not rebroadcasted back into MQTT anymore and we assume that at least one node
                 // receives it when we get our own packet back. Then we'll stop our retransmissions.
-                if (e.packet && getFrom(e.packet) == nodeDB.getNodeNum())
+                if (e.packet && getFrom(e.packet) == nodeDB->getNodeNum())
                     routingModule->sendAckNak(meshtastic_Routing_Error_NONE, getFrom(e.packet), e.packet->id, ch.index);
                 else
                     LOG_INFO("Ignoring downlink message we originally sent.\n");
@@ -238,8 +240,10 @@ MQTT::MQTT() : concurrency::OSThread("mqtt"), mqttQueue(MAX_MQTT_QUEUE)
         }
 
         if (moduleConfig.mqtt.map_reporting_enabled && moduleConfig.mqtt.has_map_report_settings) {
-            map_position_precision = moduleConfig.mqtt.map_report_settings.position_precision;
-            map_publish_interval_secs = moduleConfig.mqtt.map_report_settings.publish_interval_secs;
+            map_position_precision = Default::getConfiguredOrDefault(moduleConfig.mqtt.map_report_settings.position_precision,
+                                                                     default_map_position_precision);
+            map_publish_interval_msecs = Default::getConfiguredOrDefaultMs(
+                moduleConfig.mqtt.map_report_settings.publish_interval_secs, default_map_publish_interval_secs);
         }
 
 #ifdef HAS_NETWORKING
@@ -443,8 +447,10 @@ void MQTT::sendSubscriptions()
 
 bool MQTT::wantsLink() const
 {
-    bool hasChannelorMapReport = false;
+    bool hasChannelorMapReport =
+        moduleConfig.mqtt.enabled && (moduleConfig.mqtt.map_reporting_enabled || channels.anyMqttEnabled());
 
+<<<<<<< HEAD
 <<<<<<< HEAD
     if (moduleConfig.mqtt.enabled)
     {
@@ -473,6 +479,8 @@ bool MQTT::wantsLink() const
             }
         }
     }
+=======
+>>>>>>> 279464f96d5139920b017d437501233737daf407
     if (hasChannelorMapReport && moduleConfig.mqtt.proxy_to_client_enabled)
         return true;
 
@@ -487,7 +495,7 @@ bool MQTT::wantsLink() const
 
 int32_t MQTT::runOnce()
 {
-    if (!moduleConfig.mqtt.enabled)
+    if (!moduleConfig.mqtt.enabled || !(moduleConfig.mqtt.map_reporting_enabled || channels.anyMqttEnabled()))
         return disable();
 
     bool wantConnection = wantsLink();
@@ -678,10 +686,11 @@ void MQTT::perhapsReportToMap()
     if (!moduleConfig.mqtt.map_reporting_enabled || !(moduleConfig.mqtt.proxy_to_client_enabled || isConnectedDirectly()))
         return;
 
-    if (millis() - last_report_to_map < map_publish_interval_secs * 1000) {
+    if (millis() - last_report_to_map < map_publish_interval_msecs) {
         return;
     } else {
         if (map_position_precision == 0 || (localPosition.latitude_i == 0 && localPosition.longitude_i == 0)) {
+            last_report_to_map = millis();
             LOG_WARN("MQTT Map reporting is enabled, but precision is 0 or no position available.\n");
             return;
         }
@@ -694,7 +703,7 @@ void MQTT::perhapsReportToMap()
         // Allocate MeshPacket and fill it
         meshtastic_MeshPacket *mp = packetPool.allocZeroed();
         mp->which_payload_variant = meshtastic_MeshPacket_decoded_tag;
-        mp->from = nodeDB.getNodeNum();
+        mp->from = nodeDB->getNodeNum();
         mp->to = NODENUM_BROADCAST;
         mp->decoded.portnum = meshtastic_PortNum_MAP_REPORT_APP;
 
@@ -722,7 +731,7 @@ void MQTT::perhapsReportToMap()
         mapReport.altitude = localPosition.altitude;
         mapReport.position_precision = map_position_precision;
 
-        mapReport.num_online_local_nodes = nodeDB.getNumOnlineMeshNodes(true);
+        mapReport.num_online_local_nodes = nodeDB->getNumOnlineMeshNodes(true);
 
         // Encode MapReport message and set it to MeshPacket in ServiceEnvelope
         mp->decoded.payload.size = pb_encode_to_bytes(mp->decoded.payload.bytes, sizeof(mp->decoded.payload.bytes),
@@ -977,7 +986,7 @@ std::string MQTT::meshPacketToJson(meshtastic_MeshPacket *mp)
                     auto addToRoute = [](JSONArray *route, NodeNum num)
                     {
                         char long_name[40] = "Unknown";
-                        meshtastic_NodeInfoLite *node = nodeDB.getMeshNode(num);
+                        meshtastic_NodeInfoLite *node = nodeDB->getMeshNode(num);
                         bool name_known = node ? node->has_user : false;
                         if (name_known)
                             memcpy(long_name, node->user.long_name, sizeof(long_name));
@@ -1100,7 +1109,7 @@ bool MQTT::isValidJsonEnvelope(JSONObject &json)
     // if "sender" is provided, avoid processing packets we uplinked
     return (json.find("sender") != json.end() ? (json["sender"]->AsString().compare(owner.id) != 0) : true) &&
            (json.find("from") != json.end()) && json["from"]->IsNumber() &&
-           (json["from"]->AsNumber() == nodeDB.getNodeNum()) &&             // only accept message if the "from" is us
+           (json["from"]->AsNumber() == nodeDB->getNodeNum()) &&            // only accept message if the "from" is us
            (json.find("type") != json.end()) && json["type"]->IsString() && // should specify a type
            (json.find("payload") != json.end());                            // should have a payload
 }
